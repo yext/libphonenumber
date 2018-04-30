@@ -2,9 +2,11 @@ package libphonenumber
 
 import (
 	"reflect"
+	"regexp"
 	"testing"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/theothertomelliott/go-must"
 )
 
 func TestParse(t *testing.T) {
@@ -687,7 +689,7 @@ func runTestBatch(t *testing.T, tests []testCase) {
 	for _, test := range tests {
 		n, err := Parse(test.num, test.region)
 		if err != nil {
-			t.Errorf("Failed to parse number %s: %s", err)
+			t.Errorf("Failed to parse number %s: %s", test.num, err)
 		}
 
 		if IsValidNumberForRegion(n, test.region) != test.valid {
@@ -770,4 +772,67 @@ func TestNewIndianPhones(t *testing.T) {
 	}
 
 	runTestBatch(t, tests)
+}
+
+func TestRegexCacheWrite(t *testing.T) {
+	pattern1 := "TestRegexCacheWrite"
+	if _, found1 := readFromRegexCache(pattern1); found1 {
+		t.Errorf("pattern |%v| is in the cache", pattern1)
+	}
+	regex1 := getRegexFor(pattern1)
+	cachedRegex1, found1 := readFromRegexCache(pattern1)
+	if !found1 {
+		t.Errorf("pattern |%v| is not in the cache", pattern1)
+	}
+	if regex1 != cachedRegex1 {
+		t.Error("expected the same instance, but got a different one")
+	}
+	pattern2 := pattern1 + "."
+	if _, found2 := readFromRegexCache(pattern2); found2 {
+		t.Errorf("pattern |%v| is in the cache", pattern2)
+	}
+}
+
+func TestRegexCacheRead(t *testing.T) {
+	pattern1 := "TestRegexCacheRead"
+	if _, found1 := readFromRegexCache(pattern1); found1 {
+		t.Errorf("pattern |%v| is in the cache", pattern1)
+	}
+	regex1 := regexp.MustCompile(pattern1)
+	writeToRegexCache(pattern1, regex1)
+	if cachedRegex1 := getRegexFor(pattern1); cachedRegex1 != regex1 {
+		t.Error("expected the same instance, but got a different one")
+	}
+	cachedRegex1, found1 := readFromRegexCache(pattern1)
+	if !found1 {
+		t.Errorf("pattern |%v| is not in the cache", pattern1)
+	}
+	if cachedRegex1 != regex1 {
+		t.Error("expected the same instance, but got a different one")
+	}
+	pattern2 := pattern1 + "."
+	if _, found2 := readFromRegexCache(pattern2); found2 {
+		t.Errorf("pattern |%v| is in the cache", pattern2)
+	}
+}
+
+func TestRegexCacheStrict(t *testing.T) {
+	const expectedResult = "(41) 3020-3445"
+	phoneToTest := &PhoneNumber{
+		CountryCode:    proto.Int32(55),
+		NationalNumber: proto.Uint64(4130203445),
+	}
+
+	firstRunResult := Format(phoneToTest, NATIONAL)
+	must.BeEqual(t, expectedResult, firstRunResult, "phone number formatting not as expected")
+
+	// This adds value to the regex cache that would break the following lookup if the regex-s
+	// in cache would not be strict.
+	Format(&PhoneNumber{
+		CountryCode:    proto.Int32(973),
+		NationalNumber: proto.Uint64(17112724),
+	}, NATIONAL)
+
+	secondRunResult := Format(phoneToTest, NATIONAL)
+	must.BeEqual(t, expectedResult, secondRunResult, "phone number formatting not as expected")
 }
